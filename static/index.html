@@ -551,7 +551,10 @@
      JAVASCRIPT
 ================================================================ -->
 <script>
-const API = '';  // same-origin
+// API base URL: empty string means same-origin (served by server.py at the same host:port).
+// If serving the UI from a different host, set this to the full backend URL,
+// e.g. const API = 'http://localhost:8000';
+const API = '';
 let markets = [];
 let selectedMarket = null;
 let analysisData = null;

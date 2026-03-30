@@ -224,10 +224,40 @@ def run_cycle(
                 "⚠️  STOP-LOSS activado para %s @ %.4f", pos_market_id[:8], current_price
             )
             if not DRY_RUN:
-                # Colocar orden de cierre
-                pass  # TODO: implementar cierre de posición via CLOB
+                # Buscar el token_id del mercado para colocar la orden de cierre
+                token_id = _get_yes_token_id(markets, pos_market_id)
+                signal = pos.get("signal", "BUY YES")
+                # Cerrar posición vendiendo (o comprando en sentido opuesto)
+                close_side = "SELL" if signal == "BUY YES" else "BUY"
+                close_price = current_price if signal == "BUY YES" else (1 - current_price)
+                if token_id:
+                    result = client.place_order(
+                        token_id=token_id,
+                        side=close_side,
+                        price=close_price,
+                        size=pos.get("size", 0),
+                    )
+                    if result:
+                        logger.info("Orden de cierre colocada para stop-loss: %s", pos_market_id[:8])
+                    else:
+                        logger.error("No se pudo colocar orden de cierre para %s", pos_market_id[:8])
+                else:
+                    logger.error("No se encontró token_id para cerrar posición %s", pos_market_id[:8])
             pnl = risk.close_position(pos_market_id, current_price)
             logger.info("Posición cerrada por stop-loss | PnL: $%.2f", pnl)
+
+    return summary
+
+
+def _get_yes_token_id(markets: list[dict], market_id: str) -> str | None:
+    """Obtiene el token_id del outcome YES para un mercado."""
+    for m in markets:
+        mid = str(m.get("id", m.get("conditionId", "")))
+        if mid == market_id:
+            for token in m.get("tokens", []):
+                if token.get("outcome", "").upper() == "YES":
+                    return token.get("token_id") or token.get("tokenId")
+    return None
 
     return summary
 
