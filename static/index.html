@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PolyBot — Automated Trading</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <style>
+    /* =====================================================================
+       Reset & Variables
+    ===================================================================== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0b0e;
+      --bg2: #111318;
+      --bg3: #191c24;
+      --border: #23272f;
+      --accent: #7c6dff;
+      --accent2: #5af0a0;
+      --accent3: #f0a05a;
+      --red: #f05a6e;
+      --text: #e8eaf0;
+      --muted: #656b7e;
+      --font: 'Syne', sans-serif;
+      --mono: 'JetBrains Mono', monospace;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      overflow: hidden;
+    }
+
+    /* Grid background */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(124,109,255,.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(124,109,255,.04) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* =====================================================================
+       Layout
+    ===================================================================== */
+    .app {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-rows: 56px 1fr;
+      height: 100vh;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 0 24px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+    }
+    .logo {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: var(--accent);
+    }
+    .logo span { color: var(--text); }
+    .tagline { color: var(--muted); font-size: 12px; font-family: var(--mono); }
+    .header-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+    .mode-badge {
+      padding: 3px 10px;
+      border-radius: 99px;
+      font-size: 11px;
+      font-family: var(--mono);
+      font-weight: 700;
+      letter-spacing: .5px;
+    }
+    .mode-badge.dry { background: rgba(90,240,160,.15); color: var(--accent2); border: 1px solid rgba(90,240,160,.3); }
+    .mode-badge.live { background: rgba(240,90,110,.15); color: var(--red); border: 1px solid rgba(240,90,110,.3); }
+
+    .btn {
+      padding: 6px 16px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-family: var(--font);
+      font-weight: 600;
+      font-size: 13px;
+      transition: opacity .15s, transform .1s;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-success { background: var(--accent2); color: #000; }
+    .btn-danger  { background: var(--red); color: #fff; }
+    .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
+
+    /* Main panels */
+    .panels {
+      display: grid;
+      grid-template-columns: 320px 1fr 300px;
+      gap: 0;
+      height: calc(100vh - 56px);
+      overflow: hidden;
+    }
+
+    .panel {
+      display: flex;
+      flex-direction: column;
+      background: var(--bg2);
+      border-right: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .panel:last-child { border-right: none; }
+
+    .panel-header {
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .panel-title {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .panel-badge {
+      margin-left: auto;
+      background: var(--bg3);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 99px;
+    }
+    .panel-body { flex: 1; overflow-y: auto; padding: 12px; }
+    .panel-body::-webkit-scrollbar { width: 4px; }
+    .panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    /* =====================================================================
+       Market cards (left panel)
+    ===================================================================== */
+    .market-card {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: border-color .15s;
+    }
+    .market-card:hover, .market-card.active { border-color: var(--accent); }
+    .market-q {
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.4;
+      margin-bottom: 8px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .market-prices {
+      display: flex;
+      gap: 8px;
+    }
+    .price-pill {
+      flex: 1;
+      border-radius: 5px;
+      padding: 4px 8px;
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 700;
+      text-align: center;
+    }
+    .price-yes { background: rgba(90,240,160,.12); color: var(--accent2); }
+    .price-no  { background: rgba(240,90,110,.12); color: var(--red); }
+    .market-meta {
+      margin-top: 6px;
+      font-size: 10px;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+
+    /* Search */
+    .search-wrap { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    .search-input {
+      width: 100%;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 12px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12px;
+      outline: none;
+    }
+    .search-input:focus { border-color: var(--accent); }
+
+    /* =====================================================================
+       Analysis panel (center)
+    ===================================================================== */
+    .center-panel { border-right: 1px solid var(--border); }
+
+    .analysis-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      gap: 12px;
+      color: var(--muted);
+    }
+    .analysis-empty svg { opacity: .3; }
+
+    .analysis-card {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+
+    /* Gauge */
+    .gauge-wrap { display: flex; align-items: center; justify-content: center; padding: 20px 0 8px; }
+    .gauge-svg { width: 160px; height: 90px; }
+    .gauge-track { fill: none; stroke: var(--bg); stroke-width: 14; }
+    .gauge-fill  { fill: none; stroke-width: 14; stroke-linecap: round; transition: stroke-dashoffset .6s ease; }
+    .gauge-label {
+      text-anchor: middle;
+      font-family: var(--mono);
+      font-weight: 700;
+      font-size: 22px;
+      fill: var(--text);
+    }
+    .gauge-sub {
+      text-anchor: middle;
+      font-family: var(--font);
+      font-size: 10px;
+      fill: var(--muted);
+    }
+
+    /* Signal badge */
+    .signal-row { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+    .signal-badge {
+      padding: 5px 14px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: .5px;
+    }
+    .signal-buy-yes { background: rgba(90,240,160,.2); color: var(--accent2); border: 1px solid rgba(90,240,160,.4); }
+    .signal-buy-no  { background: rgba(240,90,110,.2); color: var(--red);     border: 1px solid rgba(240,90,110,.4); }
+    .signal-pass    { background: rgba(100,107,126,.15); color: var(--muted); border: 1px solid var(--border); }
+
+    /* Stats grid */
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+    .stat-box {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 10px 12px;
+    }
+    .stat-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+    .stat-value { font-family: var(--mono); font-size: 16px; font-weight: 700; }
+    .stat-value.green { color: var(--accent2); }
+    .stat-value.red   { color: var(--red); }
+    .stat-value.purple { color: var(--accent); }
+
+    /* Factors */
+    .factors-list { list-style: none; }
+    .factors-list li {
+      padding: 5px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text);
+      display: flex;
+      gap: 8px;
+    }
+    .factors-list li::before { content: '›'; color: var(--accent); font-weight: 700; }
+
+    /* Reasoning */
+    .reasoning {
+      background: var(--bg);
+      border-left: 3px solid var(--accent);
+      border-radius: 0 6px 6px 0;
+      padding: 10px 12px;
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--text);
+    }
+
+    /* Loading spinner */
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* =====================================================================
+       Trading panel (right)
+    ===================================================================== */
+    .trade-form { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .form-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+    .form-input, .form-select {
+      width: 100%;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12px;
+      outline: none;
+    }
+    .form-input:focus, .form-select:focus { border-color: var(--accent); }
+    .form-select option { background: var(--bg3); }
+
+    .kelly-bar-wrap { margin-top: 4px; }
+    .kelly-bar-bg {
+      height: 6px;
+      background: var(--bg);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .kelly-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      border-radius: 3px;
+      transition: width .5s ease;
+    }
+
+    /* Portfolio mini-cards */
+    .portfolio-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+    .portfolio-label { color: var(--muted); }
+    .portfolio-value { font-family: var(--mono); font-weight: 700; }
+
+    /* Bot status section */
+    .bot-status-wrap {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    .bot-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+    }
+    .dot.on  { background: var(--accent2); box-shadow: 0 0 6px var(--accent2); animation: pulse 1.5s infinite; }
+    .dot.off { background: var(--muted); }
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+
+    /* Toast notification */
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 18px;
+      font-size: 13px;
+      font-family: var(--mono);
+      z-index: 1000;
+      transform: translateY(60px);
+      opacity: 0;
+      transition: all .25s ease;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast.success { border-color: var(--accent2); color: var(--accent2); }
+    .toast.error   { border-color: var(--red); color: var(--red); }
+
+    /* Scrollbar for panel-body */
+    .scrollable { overflow-y: auto; }
+    .scrollable::-webkit-scrollbar { width: 4px; }
+    .scrollable::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ================================================================
+       HEADER
+  ================================================================ -->
+  <header>
+    <div class="logo">Poly<span>Bot</span></div>
+    <div class="tagline">Automated Prediction Market Trading</div>
+    <div class="header-right">
+      <div id="modeBadge" class="mode-badge dry">DRY-RUN</div>
+      <button class="btn btn-outline" onclick="refreshMarkets()">↺ Refresh</button>
+    </div>
+  </header>
+
+  <!-- ================================================================
+       PANELS
+  ================================================================ -->
+  <div class="panels">
+
+    <!-- ============================================================
+         LEFT — Markets
+    ============================================================ -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Mercados</span>
+        <span class="panel-badge" id="marketCount">0</span>
+      </div>
+      <div class="search-wrap">
+        <input class="search-input" id="searchInput" placeholder="Buscar mercado..." oninput="filterMarkets()" />
+      </div>
+      <div class="panel-body" id="marketList">
+        <div class="analysis-empty">
+          <div class="spinner"></div>
+          <span>Cargando mercados...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         CENTER — AI Analysis
+    ============================================================ -->
+    <div class="panel center-panel">
+      <div class="panel-header">
+        <span class="panel-title">Análisis IA</span>
+        <span id="analysisStatus" class="panel-badge">—</span>
+      </div>
+      <div class="panel-body" id="analysisPanel">
+        <div class="analysis-empty">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <span>Seleccioná un mercado para analizar</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         RIGHT — Trading & Portfolio
+    ============================================================ -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Trading & Portfolio</span>
+      </div>
+      <div class="panel-body scrollable">
+
+        <!-- Bot control -->
+        <div class="bot-status-wrap">
+          <div class="bot-indicator">
+            <div class="dot off" id="botDot"></div>
+            <span style="font-size:12px;font-weight:700;" id="botStatusText">Bot detenido</span>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-success" style="flex:1;font-size:12px;" id="btnBotStart" onclick="startBot()">▶ Start</button>
+            <button class="btn btn-danger"  style="flex:1;font-size:12px;" id="btnBotStop" onclick="stopBot()" disabled>■ Stop</button>
+          </div>
+          <div style="margin-top:8px;font-size:10px;color:var(--muted);font-family:var(--mono);" id="botMeta"></div>
+        </div>
+
+        <!-- Portfolio stats -->
+        <div style="margin-bottom:10px;">
+          <div class="form-label">Portfolio</div>
+          <div class="portfolio-row">
+            <span class="portfolio-label">Capital</span>
+            <span class="portfolio-value purple" id="pfCapital">$—</span>
+          </div>
+          <div class="portfolio-row">
+            <span class="portfolio-label">PnL Total</span>
+            <span class="portfolio-value" id="pfPnl">$—</span>
+          </div>
+          <div class="portfolio-row">
+            <span class="portfolio-label">PnL Hoy</span>
+            <span class="portfolio-value" id="pfDailyPnl">$—</span>
+          </div>
+          <div class="portfolio-row">
+            <span class="portfolio-label">Posiciones</span>
+            <span class="portfolio-value" id="pfPositions">—</span>
+          </div>
+          <div class="portfolio-row" style="border:none;">
+            <span class="portfolio-label">Trades</span>
+            <span class="portfolio-value" id="pfTrades">—</span>
+          </div>
+        </div>
+
+        <!-- Manual trade form -->
+        <div class="analysis-card" id="tradeFormWrap" style="display:none;">
+          <div class="form-label" style="margin-bottom:10px;">Trade Manual</div>
+          <div>
+            <div class="form-label">Señal</div>
+            <select class="form-select" id="tradeSignal">
+              <option value="BUY YES">BUY YES</option>
+              <option value="BUY NO">BUY NO</option>
+            </select>
+          </div>
+          <div>
+            <div class="form-label">Precio</div>
+            <input class="form-input" id="tradePrice" type="number" step="0.01" min="0.01" max="0.99" placeholder="0.60" />
+          </div>
+          <div>
+            <div class="form-label">Tamaño (USD)</div>
+            <input class="form-input" id="tradeSize" type="number" step="1" min="1" placeholder="50" />
+          </div>
+          <div class="kelly-bar-wrap">
+            <div class="form-label">Kelly Sizing</div>
+            <div class="kelly-bar-bg"><div class="kelly-bar-fill" id="kellyBar" style="width:0%"></div></div>
+          </div>
+          <button class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="executeTrade()">Ejecutar Trade</button>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /panels -->
+</div><!-- /app -->
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- ================================================================
+     JAVASCRIPT
+================================================================ -->
+<script>
+const API = '';  // same-origin
+let markets = [];
+let selectedMarket = null;
+let analysisData = null;
+let refreshTimer = null;
+
+// ======================================================================
+// Toast
+// ======================================================================
+function showToast(msg, type = 'success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast show ${type}`;
+  setTimeout(() => { t.className = 'toast'; }, 3000);
+}
+
+// ======================================================================
+// Markets
+// ======================================================================
+async function fetchMarkets() {
+  try {
+    const res = await fetch(`${API}/api/markets?limit=50`);
+    if (!res.ok) throw new Error(res.statusText);
+    markets = await res.json();
+    renderMarkets(markets);
+    document.getElementById('marketCount').textContent = markets.length;
+  } catch (e) {
+    document.getElementById('marketList').innerHTML =
+      `<div class="analysis-empty"><span style="color:var(--red)">Error cargando mercados: ${e.message}</span></div>`;
+  }
+}
+
+function refreshMarkets() {
+  document.getElementById('marketList').innerHTML =
+    '<div class="analysis-empty"><div class="spinner"></div><span>Actualizando...</span></div>';
+  fetchMarkets();
+}
+
+function filterMarkets() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  const filtered = q ? markets.filter(m => (m.question || m.title || '').toLowerCase().includes(q)) : markets;
+  renderMarkets(filtered);
+}
+
+function renderMarkets(list) {
+  const el = document.getElementById('marketList');
+  if (!list.length) {
+    el.innerHTML = '<div class="analysis-empty"><span>Sin resultados</span></div>';
+    return;
+  }
+  el.innerHTML = list.map(m => {
+    const id = m.id || m.conditionId || '';
+    const q  = m.question || m.title || 'Sin título';
+    const prices = m.outcomePrices || ['0.50', '0.50'];
+    const pYes = parseFloat(prices[0]);
+    const pNo  = parseFloat(prices[1] || (1 - pYes));
+    const endDate = (m.endDate || m.end_date_iso || '').split('T')[0];
+    const active = selectedMarket && (selectedMarket.id || selectedMarket.conditionId) === id;
+    return `<div class="market-card${active ? ' active' : ''}" onclick='selectMarket(${JSON.stringify(m)})'>
+      <div class="market-q">${escHtml(q)}</div>
+      <div class="market-prices">
+        <div class="price-pill price-yes">YES ${(pYes*100).toFixed(1)}%</div>
+        <div class="price-pill price-no">NO ${(pNo*100).toFixed(1)}%</div>
+      </div>
+      ${endDate ? `<div class="market-meta">Cierre: ${endDate}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ======================================================================
+// Select & Analyze
+// ======================================================================
+async function selectMarket(market) {
+  selectedMarket = market;
+  renderMarkets(markets); // re-render to update active state
+
+  const panel = document.getElementById('analysisPanel');
+  const status = document.getElementById('analysisStatus');
+  status.textContent = 'Analizando...';
+  panel.innerHTML = '<div class="analysis-empty"><div class="spinner"></div><span>Claude está analizando...</span></div>';
+
+  const prices = market.outcomePrices || ['0.50', '0.50'];
+  const priceYes = parseFloat(prices[0]);
+
+  try {
+    const res = await fetch(`${API}/api/analyze`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        market_id: String(market.id || market.conditionId || ''),
+        question: market.question || market.title,
+        description: market.description || '',
+        price_yes: priceYes,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({detail: res.statusText}));
+      throw new Error(err.detail || res.statusText);
+    }
+    analysisData = await res.json();
+    renderAnalysis(market, analysisData, priceYes);
+    status.textContent = analysisData.signal;
+
+    // Pre-fill trade form
+    document.getElementById('tradeSignal').value = analysisData.signal !== 'PASS' ? analysisData.signal : 'BUY YES';
+    document.getElementById('tradePrice').value = priceYes.toFixed(3);
+    const kellyPct = Math.min(100, (analysisData.kelly_size || 0) * 100);
+    document.getElementById('kellyBar').style.width = kellyPct + '%';
+    document.getElementById('tradeFormWrap').style.display = 'block';
+  } catch (e) {
+    panel.innerHTML = `<div class="analysis-empty"><span style="color:var(--red)">Error: ${escHtml(e.message)}</span></div>`;
+    status.textContent = 'Error';
+  }
+}
+
+function renderAnalysis(market, a, priceYes) {
+  const panel = document.getElementById('analysisPanel');
+
+  const prob = a.estimated_prob || 0.5;
+  const edge = (a.edge || 0) * 100;
+  const kelly = (a.kelly_size || 0) * 100;
+
+  // Gauge
+  const R = 70;
+  const cx = 80, cy = 80;
+  const circumference = Math.PI * R; // half-circle
+  const offset = circumference * (1 - prob);
+  const gaugeColor = prob > 0.65 ? '#5af0a0' : prob > 0.45 ? '#7c6dff' : '#f05a6e';
+
+  // Signal class
+  const sigClass = a.signal === 'BUY YES' ? 'signal-buy-yes' : a.signal === 'BUY NO' ? 'signal-buy-no' : 'signal-pass';
+
+  panel.innerHTML = `
+    <div class="analysis-card">
+      <div style="font-size:13px;font-weight:700;margin-bottom:12px;line-height:1.4">
+        ${escHtml(market.question || market.title || '')}
+      </div>
+
+      <!-- Gauge -->
+      <div class="gauge-wrap">
+        <svg class="gauge-svg" viewBox="0 0 160 90">
+          <path class="gauge-track"
+            d="M 10 80 A 70 70 0 0 1 150 80"
+            stroke="#1e2230" />
+          <path class="gauge-fill"
+            d="M 10 80 A 70 70 0 0 1 150 80"
+            stroke="${gaugeColor}"
+            stroke-dasharray="${circumference}"
+            stroke-dashoffset="${circumference * (1 - prob)}" />
+          <text x="80" y="68" class="gauge-label">${(prob*100).toFixed(0)}%</text>
+          <text x="80" y="80" class="gauge-sub">Prob. estimada</text>
+        </svg>
+      </div>
+
+      <!-- Signal & Confidence -->
+      <div class="signal-row">
+        <span class="signal-badge ${sigClass}">${a.signal || 'PASS'}</span>
+        <span style="font-size:11px;color:var(--muted);font-family:var(--mono)">
+          Confianza: <strong style="color:var(--text)">${a.confidence || '—'}</strong>
+        </span>
+      </div>
+
+      <!-- Stats -->
+      <div class="stats-grid">
+        <div class="stat-box">
+          <div class="stat-label">Precio mercado</div>
+          <div class="stat-value purple">${(priceYes*100).toFixed(1)}%</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Edge</div>
+          <div class="stat-value ${edge >= 5 ? 'green' : edge <= -5 ? 'red' : ''}">
+            ${edge >= 0 ? '+' : ''}${edge.toFixed(1)}%
+          </div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Prob. estimada</div>
+          <div class="stat-value">${(prob*100).toFixed(1)}%</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Kelly size</div>
+          <div class="stat-value purple">${kelly.toFixed(1)}%</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Factors -->
+    ${a.factors && a.factors.length ? `
+    <div class="analysis-card">
+      <div class="form-label" style="margin-bottom:8px">Factores clave</div>
+      <ul class="factors-list">
+        ${a.factors.map(f => `<li>${escHtml(f)}</li>`).join('')}
+      </ul>
+    </div>` : ''}
+
+    <!-- Reasoning -->
+    ${a.reasoning ? `
+    <div class="analysis-card">
+      <div class="form-label" style="margin-bottom:8px">Razonamiento</div>
+      <div class="reasoning">${escHtml(a.reasoning)}</div>
+    </div>` : ''}
+  `;
+}
+
+// ======================================================================
+// Trade
+// ======================================================================
+async function executeTrade() {
+  if (!selectedMarket) { showToast('Seleccioná un mercado primero', 'error'); return; }
+
+  const signal = document.getElementById('tradeSignal').value;
+  const price  = parseFloat(document.getElementById('tradePrice').value);
+  const size   = parseFloat(document.getElementById('tradeSize').value);
+
+  if (!price || !size) { showToast('Completá precio y tamaño', 'error'); return; }
+
+  const tokens = (selectedMarket.tokens || []);
+  const yesToken = tokens.find(t => (t.outcome || '').toUpperCase() === 'YES');
+  const tokenId = yesToken ? (yesToken.token_id || yesToken.tokenId || '') : '';
+
+  try {
+    const res = await fetch(`${API}/api/trade`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        market_id: String(selectedMarket.id || selectedMarket.conditionId || ''),
+        token_id: tokenId,
+        signal,
+        price,
+        size,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+
+    showToast(`Trade ${data.status === 'dry_run' ? 'simulado' : 'ejecutado'}: ${signal} $${size}`, 'success');
+    fetchPortfolio();
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+// ======================================================================
+// Portfolio
+// ======================================================================
+async function fetchPortfolio() {
+  try {
+    const res = await fetch(`${API}/api/portfolio`);
+    if (!res.ok) return;
+    const d = await res.json();
+    document.getElementById('pfCapital').textContent   = '$' + d.capital.toFixed(2);
+    document.getElementById('pfTrades').textContent    = d.total_trades;
+    document.getElementById('pfPositions').textContent = d.open_positions;
+
+    const pnl = d.total_pnl;
+    const pnlEl = document.getElementById('pfPnl');
+    pnlEl.textContent = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
+    pnlEl.className = 'portfolio-value ' + (pnl >= 0 ? 'green' : 'red');
+
+    const dpnl = d.daily_pnl;
+    const dpEl = document.getElementById('pfDailyPnl');
+    dpEl.textContent = (dpnl >= 0 ? '+' : '') + '$' + dpnl.toFixed(2);
+    dpEl.className = 'portfolio-value ' + (dpnl >= 0 ? 'green' : 'red');
+  } catch (_) {}
+}
+
+// ======================================================================
+// Bot
+// ======================================================================
+async function fetchBotStatus() {
+  try {
+    const res = await fetch(`${API}/api/bot/status`);
+    if (!res.ok) return;
+    const d = await res.json();
+
+    const dot  = document.getElementById('botDot');
+    const txt  = document.getElementById('botStatusText');
+    const meta = document.getElementById('botMeta');
+    const badge = document.getElementById('modeBadge');
+
+    dot.className = `dot ${d.running ? 'on' : 'off'}`;
+    txt.textContent = d.running ? 'Bot corriendo' : 'Bot detenido';
+
+    badge.textContent = d.mode === 'live' ? 'LIVE' : 'DRY-RUN';
+    badge.className = `mode-badge ${d.mode === 'live' ? 'live' : 'dry'}`;
+
+    if (d.running && d.last_cycle_at) {
+      meta.textContent = `Ciclos: ${d.cycles} | Trades: ${d.trades} | Último: ${d.last_cycle_at.split('T')[1]?.slice(0,8)} UTC`;
+    } else {
+      meta.textContent = d.running ? 'Iniciando...' : '';
+    }
+
+    document.getElementById('btnBotStart').disabled = d.running;
+    document.getElementById('btnBotStop').disabled  = !d.running;
+  } catch (_) {}
+}
+
+async function startBot() {
+  try {
+    const res = await fetch(`${API}/api/bot/start`, { method: 'POST' });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.detail || res.statusText);
+    showToast(d.status === 'already_running' ? 'El bot ya está corriendo' : 'Bot iniciado ✓', 'success');
+    fetchBotStatus();
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+async function stopBot() {
+  try {
+    const res = await fetch(`${API}/api/bot/stop`, { method: 'POST' });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.detail || res.statusText);
+    showToast('Bot detenido', 'success');
+    fetchBotStatus();
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+// ======================================================================
+// Init & auto-refresh
+// ======================================================================
+function init() {
+  fetchMarkets();
+  fetchPortfolio();
+  fetchBotStatus();
+
+  // Auto-refresh every 30 seconds
+  setInterval(fetchMarkets, 30_000);
+  setInterval(fetchPortfolio, 15_000);
+  setInterval(fetchBotStatus, 5_000);
+}
+
+init();
+</script>
+</body>
+</html>
